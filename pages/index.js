@@ -437,7 +437,7 @@ function TaskModal({ task, equipe, uploadando, onUpload, onSave, onClose, onChan
   function togglePessoa(key, nome) {
     const sel = (task[key]||'').split(',').map(s=>s.trim()).filter(Boolean)
     const idx = sel.indexOf(nome)
-    if (idx >= 0) sel.splice(idx, 1) else sel.push(nome)
+    if (idx >= 0) { sel.splice(idx, 1) } else { sel.push(nome) }
     onChange(prev => ({...prev, [key]: sel.join(', ')}))
   }
 
