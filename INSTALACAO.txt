@@ -1,2 +1,106 @@
-NEXT_PUBLIC_SUPABASE_URL=https://XXXXXXXXXXXX.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+╔══════════════════════════════════════════════════════════════╗
+║         NEW TECH AUTOMAÇÃO — Guia de Instalação v5          ║
+║              Vercel + Supabase (100% grátis)                ║
+╚══════════════════════════════════════════════════════════════╝
+
+TEMPO ESTIMADO: 15 minutos
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PASSO 1 — Criar conta no Supabase
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Acesse https://supabase.com e clique em "Start your project"
+2. Entre com sua conta Google
+3. Clique em "New project"
+   - Nome: newtech-projetos
+   - Senha do banco: anote em lugar seguro
+   - Região: South America (São Paulo)
+4. Aguarde ~2 minutos o projeto subir
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PASSO 2 — Criar as tabelas no Supabase
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. No painel do Supabase, clique em "SQL Editor" (menu esquerdo)
+2. Clique em "New query"
+3. Abra o arquivo "supabase-schema.sql" deste ZIP
+4. Copie TODO o conteúdo e cole no editor
+5. Clique em "Run" (botão verde)
+   → Deve aparecer "Success. No rows returned"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PASSO 3 — Pegar as chaves do Supabase
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. No menu esquerdo clique em "Settings" (engrenagem)
+2. Clique em "API"
+3. Anote:
+   - Project URL: https://XXXXX.supabase.co
+   - anon/public key: eyJhbGci... (chave longa)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PASSO 4 — Criar conta no GitHub e subir o código
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Acesse https://github.com e crie uma conta (se não tiver)
+2. Clique em "New repository"
+   - Nome: newtech-projetos
+   - Privado: ✓ (marque Private)
+   - Clique "Create repository"
+3. Na página do repositório, clique em "uploading an existing file"
+4. Arraste TODOS os arquivos desta pasta (exceto o .zip)
+5. Clique "Commit changes"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PASSO 5 — Deploy no Vercel
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Acesse https://vercel.com e entre com sua conta GitHub
+2. Clique "Add New Project"
+3. Selecione o repositório "newtech-projetos"
+4. Antes de clicar Deploy, clique em "Environment Variables"
+   Adicione DUAS variáveis:
+
+   Nome: NEXT_PUBLIC_SUPABASE_URL
+   Valor: https://XXXXX.supabase.co  ← o seu Project URL
+
+   Nome: NEXT_PUBLIC_SUPABASE_ANON_KEY
+   Valor: eyJhbGci...  ← a sua anon key
+
+5. Clique "Deploy"
+6. Aguarde ~2 minutos
+7. Pronto! Seu link será algo como: newtech-projetos.vercel.app
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PASSO 6 — Criar o primeiro usuário (você)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Acesse seu link (ex: newtech-projetos.vercel.app/login)
+2. Clique na aba "✉ Convidar"
+3. Digite SEU e-mail e uma senha
+4. Clique "Criar acesso"
+5. Vá ao e-mail e confirme (clique no link que o Supabase envia)
+6. Volte ao site e faça login normalmente
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CONVIDAR OUTROS MEMBROS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Dentro do sistema:
+1. Clique na engrenagem ⚙ (canto superior direito)
+2. Aba "🔐 Acesso"
+3. Preencha nome, e-mail e senha do novo membro
+4. Clique "Criar acesso e adicionar à equipe"
+5. Compartilhe o link + senha com a pessoa
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATUALIZAR O SISTEMA NO FUTURO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Quando receber uma nova versão:
+1. Acesse github.com/seu-usuario/newtech-projetos
+2. Clique no arquivo que mudou → editar (lápis) → cole o novo conteúdo
+3. Clique "Commit changes"
+4. O Vercel faz o deploy automático em ~1 minuto
+
+Dúvidas? Me chame no Claude! 😄
