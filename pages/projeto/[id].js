@@ -12,6 +12,7 @@ export default function ProjetoDetalhe() {
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState(null)
   const [tempos, setTempos] = useState({})
+  const [tempoInterval, setTempoInterval] = useState({})
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -79,40 +80,55 @@ export default function ProjetoDetalhe() {
   }
 
   async function carregarTempoTarefa(tarefaId) {
-    // Verificar se tem tempo em andamento
-    const { data: ativo } = await supabase
+    // Buscar TODOS os apontamentos da tarefa
+    const { data: apontamentos } = await supabase
       .from('apontamentos_tempo')
       .select('*')
       .eq('tarefa_id', tarefaId)
-      .eq('status', 'executando')
-      .maybeSingle()
+      .order('data_inicio', { ascending: false })
 
-    if (ativo) {
-      const inicio = new Date(ativo.data_inicio)
+    if (!apontamentos || apontamentos.length === 0) {
+      setTempos(prev => ({
+        ...prev,
+        [tarefaId]: { 
+          tempoAtual: 0, 
+          status: 'parado',
+          apontamentos: []
+        }
+      }))
+      return
+    }
+
+    // Verificar se tem algum em execução
+    const emExecucao = apontamentos.find(a => a.status === 'executando')
+    
+    if (emExecucao) {
+      const inicio = new Date(emExecucao.data_inicio)
       const agora = new Date()
       const segundosPassados = Math.floor((agora - inicio) / 1000)
       
       setTempos(prev => ({
         ...prev,
-        [tarefaId]: {
-          ...ativo,
-          tempoAtual: (ativo.tempo_segundos || 0) + segundosPassados,
-          status: 'executando'
+        [tarefaId]: { 
+          ...emExecucao, 
+          tempoAtual: (emExecucao.tempo_segundos || 0) + segundosPassados,
+          status: 'executando',
+          apontamentos: apontamentos
         }
       }))
     } else {
-      // Buscar total de tempo já registrado
-      const { data: historico } = await supabase
-        .from('apontamentos_tempo')
-        .select('tempo_segundos')
-        .eq('tarefa_id', tarefaId)
-        .eq('status', 'finalizado')
-
-      const totalSegundos = historico?.reduce((acc, item) => acc + (item.tempo_segundos || 0), 0) || 0
+      // Calcular total de segundos de todos os apontamentos finalizados
+      const totalSegundos = apontamentos
+        .filter(a => a.status === 'finalizado')
+        .reduce((acc, item) => acc + (item.tempo_segundos || 0), 0)
       
       setTempos(prev => ({
         ...prev,
-        [tarefaId]: { tempoAtual: totalSegundos, status: 'parado' }
+        [tarefaId]: { 
+          tempoAtual: totalSegundos, 
+          status: 'parado',
+          apontamentos: apontamentos
+        }
       }))
     }
   }
@@ -120,13 +136,11 @@ export default function ProjetoDetalhe() {
   async function iniciarTempo(tarefaId) {
     if (!user) return
 
-    // Parar qualquer tempo ativo do usuário
-    await supabase
-      .from('apontamentos_tempo')
-      .update({ status: 'pausado' })
-      .eq('usuario_id', user.id)
-      .eq('status', 'executando')
+    // Verificar se já tem um tempo em execução para esta tarefa
+    const tempoAtual = tempos[tarefaId]
+    if (tempoAtual?.status === 'executando') return
 
+    // Criar novo apontamento
     const { data, error } = await supabase
       .from('apontamentos_tempo')
       .insert([{
@@ -139,10 +153,37 @@ export default function ProjetoDetalhe() {
       .select()
       .single()
 
-    if (!error) {
+    if (!error && data) {
+      // Iniciar contador local
+      const intervalId = setInterval(() => {
+        setTempos(prev => {
+          const atual = prev[tarefaId]
+          if (atual?.status === 'executando') {
+            return {
+              ...prev,
+              [tarefaId]: {
+                ...atual,
+                tempoAtual: (atual.tempoAtual || 0) + 1
+              }
+            }
+          }
+          return prev
+        })
+      }, 1000)
+
+      setTempoInterval(prev => ({
+        ...prev,
+        [tarefaId]: intervalId
+      }))
+
       setTempos(prev => ({
         ...prev,
-        [tarefaId]: { ...data, tempoAtual: 0, status: 'executando' }
+        [tarefaId]: { 
+          ...data, 
+          tempoAtual: 0,
+          status: 'executando',
+          apontamentos: [data, ...(prev[tarefaId]?.apontamentos || [])]
+        }
       }))
     }
   }
@@ -151,29 +192,55 @@ export default function ProjetoDetalhe() {
     const tempoAtual = tempos[tarefaId]
     if (!tempoAtual || tempoAtual.status !== 'executando' || !tempoAtual.id) return
 
-    await supabase
+    // Parar o intervalo
+    if (tempoInterval[tarefaId]) {
+      clearInterval(tempoInterval[tarefaId])
+    }
+
+    // Atualizar no banco
+    const { error } = await supabase
       .from('apontamentos_tempo')
       .update({
+        data_fim: new Date(),
+        tempo_segundos: tempoAtual.tempoAtual,
         status: 'pausado'
       })
       .eq('id', tempoAtual.id)
 
-    await carregarTempoTarefa(tarefaId)
+    if (!error) {
+      setTempos(prev => ({
+        ...prev,
+        [tarefaId]: { 
+          ...prev[tarefaId],
+          status: 'pausado'
+        }
+      }))
+    }
   }
 
   async function finalizarTempo(tarefaId) {
     const tempoAtual = tempos[tarefaId]
     if (!tempoAtual || !tempoAtual.id) return
 
-    await supabase
+    // Parar o intervalo se estiver executando
+    if (tempoInterval[tarefaId]) {
+      clearInterval(tempoInterval[tarefaId])
+    }
+
+    // Atualizar no banco
+    const { error } = await supabase
       .from('apontamentos_tempo')
       .update({
         data_fim: new Date(),
+        tempo_segundos: tempoAtual.tempoAtual || 0,
         status: 'finalizado'
       })
       .eq('id', tempoAtual.id)
 
-    await carregarTempoTarefa(tarefaId)
+    if (!error) {
+      // Recarregar todos os tempos para ter o total correto
+      await carregarTempoTarefa(tarefaId)
+    }
   }
 
   function formatarTempo(segundos) {
@@ -183,36 +250,34 @@ export default function ProjetoDetalhe() {
     return `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segs.toString().padStart(2, '0')}`
   }
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTempos(prev => {
-        const novo = { ...prev }
-        Object.keys(novo).forEach(key => {
-          if (novo[key].status === 'executando') {
-            novo[key].tempoAtual = (novo[key].tempoAtual || 0) + 1
-          }
-        })
-        return novo
-      })
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [])
-
-  async function atualizarResponsavel(tarefaId, responsavel) {
+  async function atualizarTarefa(tarefaId, campo, valor) {
     await supabase
       .from('tarefas')
-      .update({ responsavel })
+      .update({ [campo]: valor })
       .eq('id', tarefaId)
-    carregarDados()
+    
+    // Atualizar localmente
+    setTarefas(prev => prev.map(t => 
+      t.id === tarefaId ? { ...t, [campo]: valor } : t
+    ))
   }
 
-  async function atualizarStatus(tarefaId, novoStatus) {
-    await supabase
-      .from('tarefas')
-      .update({ status: novoStatus })
-      .eq('id', tarefaId)
-    carregarDados()
+  async function adicionarResponsavel(tarefaId, responsavel) {
+    const tarefa = tarefas.find(t => t.id === tarefaId)
+    const responsaveisAtuais = tarefa.responsaveis ? tarefa.responsaveis.split(',').filter(r => r.trim()) : []
+    
+    if (!responsaveisAtuais.includes(responsavel)) {
+      responsaveisAtuais.push(responsavel)
+      await atualizarTarefa(tarefaId, 'responsaveis', responsaveisAtuais.join(','))
+    }
+  }
+
+  async function removerResponsavel(tarefaId, responsavel) {
+    const tarefa = tarefas.find(t => t.id === tarefaId)
+    const responsaveisAtuais = tarefa.responsaveis ? tarefa.responsaveis.split(',').filter(r => r.trim()) : []
+    
+    const novosResponsaveis = responsaveisAtuais.filter(r => r !== responsavel)
+    await atualizarTarefa(tarefaId, 'responsaveis', novosResponsaveis.join(','))
   }
 
   if (loading) {
@@ -252,7 +317,9 @@ export default function ProjetoDetalhe() {
   const tarefasAmbos = tarefas.filter(t => t.setor === 'ambos')
 
   const TaskCard = ({ tarefa, cor }) => {
-    const tempo = tempos[tarefa.id] || { tempoAtual: 0, status: 'parado' }
+    const tempo = tempos[tarefa.id] || { tempoAtual: 0, status: 'parado', apontamentos: [] }
+    const responsaveis = tarefa.responsaveis ? tarefa.responsaveis.split(',').filter(r => r.trim()) : []
+    const [mostrarSeletor, setMostrarSeletor] = useState(false)
 
     return (
       <div style={{
@@ -290,57 +357,130 @@ export default function ProjetoDetalhe() {
         </div>
 
         {/* Status e Prioridade */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-          <span style={{
-            background: tarefa.prioridade === 'Urgente' ? '#7f1d1d' :
-                       tarefa.prioridade === 'Alta' ? '#7f1d1d' : '#334155',
-            color: tarefa.prioridade === 'Urgente' ? '#f87171' :
-                   tarefa.prioridade === 'Alta' ? '#fbbf24' : '#94a3b8',
-            padding: '2px 8px',
-            borderRadius: '4px',
-            fontSize: '11px',
-            fontWeight: 'bold'
-          }}>
-            {tarefa.prioridade || 'Normal'}
-          </span>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <select
+            value={tarefa.prioridade || 'Normal'}
+            onChange={(e) => atualizarTarefa(tarefa.id, 'prioridade', e.target.value)}
+            style={{
+              background: tarefa.prioridade === 'Urgente' ? '#7f1d1d' :
+                         tarefa.prioridade === 'Alta' ? '#7f1d1d' : '#334155',
+              color: tarefa.prioridade === 'Urgente' ? '#f87171' :
+                     tarefa.prioridade === 'Alta' ? '#fbbf24' : '#94a3b8',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '4px',
+              padding: '4px 8px',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="Normal">🔵 Normal</option>
+            <option value="Alta">🟡 Alta</option>
+            <option value="Urgente">🔴 Urgente</option>
+          </select>
+
           <select
             value={tarefa.status || 'Pendente'}
-            onChange={(e) => atualizarStatus(tarefa.id, e.target.value)}
+            onChange={(e) => atualizarTarefa(tarefa.id, 'status', e.target.value)}
             style={{
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: '4px',
-              padding: '2px 8px',
+              padding: '4px 8px',
               color: '#fff',
-              fontSize: '11px'
+              fontSize: '11px',
+              cursor: 'pointer'
             }}
           >
             <option value="Pendente">⏳ Pendente</option>
             <option value="Em andamento">▶️ Em andamento</option>
+            <option value="Aguardando">⏸️ Aguardando</option>
             <option value="Concluida">✅ Concluída</option>
           </select>
         </div>
 
-        {/* Responsável */}
-        <select
-          value={tarefa.responsavel || ''}
-          onChange={e => atualizarResponsavel(tarefa.id, e.target.value)}
-          style={{
-            width: '100%',
-            padding: '8px',
-            marginBottom: '12px',
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '4px',
-            color: '#fff',
-            fontSize: '13px'
-          }}
-        >
-          <option value="">Selecionar responsável...</option>
-          {equipe.map(p => (
-            <option key={p.id} value={p.nome}>{p.nome}</option>
-          ))}
-        </select>
+        {/* Múltiplos Responsáveis */}
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span style={{ color: '#3d5a80', fontSize: '12px' }}>Responsáveis:</span>
+            <button
+              onClick={() => setMostrarSeletor(!mostrarSeletor)}
+              style={{
+                background: 'none',
+                border: '1px dashed #3d5a80',
+                borderRadius: '4px',
+                color: '#3d5a80',
+                padding: '2px 8px',
+                fontSize: '11px',
+                cursor: 'pointer'
+              }}
+            >
+              + Adicionar
+            </button>
+          </div>
+
+          {/* Lista de responsáveis atuais */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+            {responsaveis.map(resp => (
+              <span
+                key={resp}
+                style={{
+                  background: 'rgba(245,158,11,0.1)',
+                  color: '#f59e0b',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                {resp}
+                <button
+                  onClick={() => removerResponsavel(tarefa.id, resp)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#f59e0b',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+
+          {/* Seletor de responsável */}
+          {mostrarSeletor && (
+            <select
+              onChange={(e) => {
+                if (e.target.value) {
+                  adicionarResponsavel(tarefa.id, e.target.value)
+                  setMostrarSeletor(false)
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '6px',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '4px',
+                color: '#fff',
+                fontSize: '12px'
+              }}
+            >
+              <option value="">Selecionar...</option>
+              {equipe
+                .filter(p => !responsaveis.includes(p.nome))
+                .map(p => (
+                  <option key={p.id} value={p.nome}>{p.nome}</option>
+                ))
+              }
+            </select>
+          )}
+        </div>
 
         {/* Timer */}
         <div style={{
@@ -350,7 +490,7 @@ export default function ProjetoDetalhe() {
           marginBottom: '8px'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '14px' }}>
+            <span style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '18px' }}>
               ⏱️ {formatarTempo(tempo.tempoAtual)}
             </span>
             <span style={{
@@ -419,6 +559,13 @@ export default function ProjetoDetalhe() {
               </button>
             )}
           </div>
+
+          {/* Histórico de apontamentos */}
+          {tempo.apontamentos && tempo.apontamentos.length > 1 && (
+            <div style={{ marginTop: '8px', fontSize: '10px', color: '#3d5a80' }}>
+              {tempo.apontamentos.filter(a => a.status === 'finalizado').length} sessões registradas
+            </div>
+          )}
         </div>
 
         {/* Prazo */}
@@ -501,11 +648,6 @@ export default function ProjetoDetalhe() {
             {tarefasAmbos.map(tarefa => (
               <TaskCard key={tarefa.id} tarefa={tarefa} cor="#f59e0b" />
             ))}
-            {tarefasAmbos.length === 0 && (
-              <div style={{ color: '#3d5a80', textAlign: 'center', padding: '20px' }}>
-                Nenhuma tarefa geral
-              </div>
-            )}
           </div>
 
           {/* Coluna Elétrica */}
@@ -531,11 +673,6 @@ export default function ProjetoDetalhe() {
             {tarefasEletrica.map(tarefa => (
               <TaskCard key={tarefa.id} tarefa={tarefa} cor="#3b82f6" />
             ))}
-            {tarefasEletrica.length === 0 && (
-              <div style={{ color: '#3d5a80', textAlign: 'center', padding: '20px' }}>
-                Nenhuma tarefa elétrica
-              </div>
-            )}
           </div>
 
           {/* Coluna Mecânica */}
@@ -561,11 +698,6 @@ export default function ProjetoDetalhe() {
             {tarefasMecanica.map(tarefa => (
               <TaskCard key={tarefa.id} tarefa={tarefa} cor="#10b981" />
             ))}
-            {tarefasMecanica.length === 0 && (
-              <div style={{ color: '#3d5a80', textAlign: 'center', padding: '20px' }}>
-                Nenhuma tarefa mecânica
-              </div>
-            )}
           </div>
         </div>
       </div>
