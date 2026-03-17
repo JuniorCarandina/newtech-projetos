@@ -235,7 +235,12 @@ export default function Board() {
             </div>
           )}
         </div>
-
+          <button className="btn btn-icon" onClick={() => { setSettings(true); setSettingsTab('equipe') }} title="Configurações">
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">...</svg>
+</button>
+<button className="btn btn-secondary" onClick={() => supabase.auth.signOut()} style={{fontSize:'12px', padding:'8px 12px'}}>
+  Sair
+</button>
         <div style={{display:'flex', gap:7, alignItems:'center', flexWrap:'wrap'}}>
           {/* Busca */}
           <div style={{position:'relative', display:'flex', alignItems:'center'}}>
