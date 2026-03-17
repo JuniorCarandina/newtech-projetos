@@ -67,7 +67,13 @@ export default function Relatorio() {
 
     // Buscar emails dos usuários
     const dadosCompletos = await Promise.all(data?.map(async (item) => {
-      const { data: userData } = await supabase.auth.admin.getUserById(item.usuario_id)
+      const { data: equipeData } = await supabase
+  .from('equipe')
+  .select('nome, email')
+  .eq('id', item.usuario_id)
+  .single()
+
+const nomeResponsavel = equipeData?.nome || equipeData?.email || 'Desconhecido'
       return {
         ...item,
         usuario_email: userData?.user?.email || 'Desconhecido',
