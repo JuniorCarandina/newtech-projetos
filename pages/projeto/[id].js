@@ -99,46 +99,134 @@ export default function ProjetoDetalhe() {
       return
     }
 
-    // Verificar se tem algum em execução
-    const emExecucao = apontamentos.find(a => a.status === 'executando')
-    
-    if (emExecucao) {
-      const inicio = new Date(emExecucao.data_inicio)
-      const agora = new Date()
-      const segundosPassados = Math.floor((agora - inicio) / 1000)
-      
+async function iniciarTempo(tarefaId) {
+  if (!user) return
+
+  // Verificar se já existe um tempo pausado para esta tarefa
+  const { data: tempoPausado } = await supabase
+    .from('apontamentos_tempo')
+    .select('*')
+    .eq('tarefa_id', tarefaId)
+    .eq('status', 'pausado')
+    .order('data_inicio', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (tempoPausado) {
+    // Reativar o tempo pausado
+    const { data, error } = await supabase
+      .from('apontamentos_tempo')
+      .update({
+        status: 'executando'
+      })
+      .eq('id', tempoPausado.id)
+      .select()
+      .single()
+
+    if (!error && data) {
+      // Se já existe um intervalo rodando, limpar
+      if (tempoInterval[tarefaId]) {
+        clearInterval(tempoInterval[tarefaId])
+      }
+
+      // Iniciar contador local
+      const intervalId = setInterval(() => {
+        setTempos(prev => {
+          const atual = prev[tarefaId]
+          if (atual?.status === 'executando') {
+            return {
+              ...prev,
+              [tarefaId]: {
+                ...atual,
+                tempoAtual: (atual.tempoAtual || 0) + 1
+              }
+            }
+          }
+          return prev
+        })
+      }, 1000)
+
+      setTempoInterval(prev => ({
+        ...prev,
+        [tarefaId]: intervalId
+      }))
+
       setTempos(prev => ({
         ...prev,
         [tarefaId]: { 
-          ...emExecucao, 
-          tempoAtual: (emExecucao.tempo_segundos || 0) + segundosPassados,
-          status: 'executando',
-          apontamentos: apontamentos
+          ...data, 
+          tempoAtual: prev[tarefaId]?.tempoAtual || 0,
+          status: 'executando'
         }
       }))
-    } else {
-      // Calcular total de segundos de todos os apontamentos finalizados
-      const totalSegundos = apontamentos
-        .filter(a => a.status === 'finalizado')
-        .reduce((acc, item) => acc + (item.tempo_segundos || 0), 0)
-      
+    }
+  } else {
+    // Verificar se já existe um tempo em execução (não deveria, mas vamos garantir)
+    const tempoAtual = tempos[tarefaId]
+    if (tempoAtual?.status === 'executando') return
+
+    // Buscar total de tempo já registrado para esta tarefa
+    const { data: temposExistentes } = await supabase
+      .from('apontamentos_tempo')
+      .select('*')
+      .eq('tarefa_id', tarefaId)
+      .eq('status', 'finalizado')
+
+    const totalExistente = temposExistentes?.reduce((acc, t) => acc + (t.tempo_segundos || 0), 0) || 0
+
+    // Criar novo apontamento
+    const { data, error } = await supabase
+      .from('apontamentos_tempo')
+      .insert([{
+        tarefa_id: tarefaId,
+        usuario_id: user.id,
+        data_inicio: new Date(),
+        status: 'executando',
+        tempo_segundos: totalExistente
+      }])
+      .select()
+      .single()
+
+    if (!error && data) {
+      // Se já existe um intervalo rodando, limpar
+      if (tempoInterval[tarefaId]) {
+        clearInterval(tempoInterval[tarefaId])
+      }
+
+      // Iniciar contador local
+      const intervalId = setInterval(() => {
+        setTempos(prev => {
+          const atual = prev[tarefaId]
+          if (atual?.status === 'executando') {
+            return {
+              ...prev,
+              [tarefaId]: {
+                ...atual,
+                tempoAtual: (atual.tempoAtual || 0) + 1
+              }
+            }
+          }
+          return prev
+        })
+      }, 1000)
+
+      setTempoInterval(prev => ({
+        ...prev,
+        [tarefaId]: intervalId
+      }))
+
       setTempos(prev => ({
         ...prev,
         [tarefaId]: { 
-          tempoAtual: totalSegundos, 
-          status: 'parado',
-          apontamentos: apontamentos
+          ...data, 
+          tempoAtual: totalExistente,
+          status: 'executando',
+          apontamentos: [data, ...(prev[tarefaId]?.apontamentos || [])]
         }
       }))
     }
   }
-
-  async function iniciarTempo(tarefaId) {
-    if (!user) return
-
-    // Verificar se já tem um tempo em execução para esta tarefa
-    const tempoAtual = tempos[tarefaId]
-    if (tempoAtual?.status === 'executando') return
+}
 
     // Criar novo apontamento
     const { data, error } = await supabase
