@@ -49,13 +49,11 @@ export default function ProjetoDetalhe() {
       .select('*')
       .eq('projeto_id', id)
 
-    // Criar mapa de ordem das etapas
     const ordemMap = {}
     etapas?.forEach(etapa => {
       ordemMap[etapa.id] = etapa.ordem
     })
 
-    // Ordenar tarefas pela ordem das etapas
     const tarefasOrdenadas = tarefasData?.sort((a, b) => {
       const ordemA = ordemMap[a.etapa_padrao_id] || 999
       const ordemB = ordemMap[b.etapa_padrao_id] || 999
@@ -71,7 +69,6 @@ export default function ProjetoDetalhe() {
     
     setEquipe(equipeData || [])
 
-    // Carregar tempos de todas as tarefas
     for (const tarefa of tarefasOrdenadas) {
       await carregarTempoTarefa(tarefa.id)
     }
@@ -80,7 +77,6 @@ export default function ProjetoDetalhe() {
   }
 
   async function carregarTempoTarefa(tarefaId) {
-    // Buscar TODOS os apontamentos da tarefa
     const { data: apontamentos } = await supabase
       .from('apontamentos_tempo')
       .select('*')
@@ -99,180 +95,153 @@ export default function ProjetoDetalhe() {
       return
     }
 
-async function iniciarTempo(tarefaId) {
-  if (!user) return
-
-  // Verificar se já existe um tempo pausado para esta tarefa
-  const { data: tempoPausado } = await supabase
-    .from('apontamentos_tempo')
-    .select('*')
-    .eq('tarefa_id', tarefaId)
-    .eq('status', 'pausado')
-    .order('data_inicio', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (tempoPausado) {
-    // Reativar o tempo pausado
-    const { data, error } = await supabase
-      .from('apontamentos_tempo')
-      .update({
-        status: 'executando'
-      })
-      .eq('id', tempoPausado.id)
-      .select()
-      .single()
-
-    if (!error && data) {
-      // Se já existe um intervalo rodando, limpar
-      if (tempoInterval[tarefaId]) {
-        clearInterval(tempoInterval[tarefaId])
-      }
-
-      // Iniciar contador local
-      const intervalId = setInterval(() => {
-        setTempos(prev => {
-          const atual = prev[tarefaId]
-          if (atual?.status === 'executando') {
-            return {
-              ...prev,
-              [tarefaId]: {
-                ...atual,
-                tempoAtual: (atual.tempoAtual || 0) + 1
-              }
-            }
-          }
-          return prev
-        })
-      }, 1000)
-
-      setTempoInterval(prev => ({
-        ...prev,
-        [tarefaId]: intervalId
-      }))
-
+    const emExecucao = apontamentos.find(a => a.status === 'executando')
+    
+    if (emExecucao) {
+      const inicio = new Date(emExecucao.data_inicio)
+      const agora = new Date()
+      const segundosPassados = Math.floor((agora - inicio) / 1000)
+      
       setTempos(prev => ({
         ...prev,
         [tarefaId]: { 
-          ...data, 
-          tempoAtual: prev[tarefaId]?.tempoAtual || 0,
-          status: 'executando'
+          ...emExecucao, 
+          tempoAtual: (emExecucao.tempo_segundos || 0) + segundosPassados,
+          status: 'executando',
+          apontamentos: apontamentos
         }
       }))
-    }
-  } else {
-    // Verificar se já existe um tempo em execução (não deveria, mas vamos garantir)
-    const tempoAtual = tempos[tarefaId]
-    if (tempoAtual?.status === 'executando') return
-
-    // Buscar total de tempo já registrado para esta tarefa
-    const { data: temposExistentes } = await supabase
-      .from('apontamentos_tempo')
-      .select('*')
-      .eq('tarefa_id', tarefaId)
-      .eq('status', 'finalizado')
-
-    const totalExistente = temposExistentes?.reduce((acc, t) => acc + (t.tempo_segundos || 0), 0) || 0
-
-    // Criar novo apontamento
-    const { data, error } = await supabase
-      .from('apontamentos_tempo')
-      .insert([{
-        tarefa_id: tarefaId,
-        usuario_id: user.id,
-        data_inicio: new Date(),
-        status: 'executando',
-        tempo_segundos: totalExistente
-      }])
-      .select()
-      .single()
-
-    if (!error && data) {
-      // Se já existe um intervalo rodando, limpar
-      if (tempoInterval[tarefaId]) {
-        clearInterval(tempoInterval[tarefaId])
-      }
-
-      // Iniciar contador local
-      const intervalId = setInterval(() => {
-        setTempos(prev => {
-          const atual = prev[tarefaId]
-          if (atual?.status === 'executando') {
-            return {
-              ...prev,
-              [tarefaId]: {
-                ...atual,
-                tempoAtual: (atual.tempoAtual || 0) + 1
-              }
-            }
-          }
-          return prev
-        })
-      }, 1000)
-
-      setTempoInterval(prev => ({
-        ...prev,
-        [tarefaId]: intervalId
-      }))
-
+    } else {
+      const totalSegundos = apontamentos
+        .filter(a => a.status === 'finalizado')
+        .reduce((acc, item) => acc + (item.tempo_segundos || 0), 0)
+      
       setTempos(prev => ({
         ...prev,
         [tarefaId]: { 
-          ...data, 
-          tempoAtual: totalExistente,
-          status: 'executando',
-          apontamentos: [data, ...(prev[tarefaId]?.apontamentos || [])]
+          tempoAtual: totalSegundos, 
+          status: 'parado',
+          apontamentos: apontamentos
         }
       }))
     }
   }
-}
 
-    // Criar novo apontamento
-    const { data, error } = await supabase
+  async function iniciarTempo(tarefaId) {
+    if (!user) return
+
+    const { data: tempoPausado } = await supabase
       .from('apontamentos_tempo')
-      .insert([{
-        tarefa_id: tarefaId,
-        usuario_id: user.id,
-        data_inicio: new Date(),
-        status: 'executando',
-        tempo_segundos: 0
-      }])
-      .select()
-      .single()
+      .select('*')
+      .eq('tarefa_id', tarefaId)
+      .eq('status', 'pausado')
+      .order('data_inicio', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-    if (!error && data) {
-      // Iniciar contador local
-      const intervalId = setInterval(() => {
-        setTempos(prev => {
-          const atual = prev[tarefaId]
-          if (atual?.status === 'executando') {
-            return {
-              ...prev,
-              [tarefaId]: {
-                ...atual,
-                tempoAtual: (atual.tempoAtual || 0) + 1
+    if (tempoPausado) {
+      const { data, error } = await supabase
+        .from('apontamentos_tempo')
+        .update({ status: 'executando' })
+        .eq('id', tempoPausado.id)
+        .select()
+        .single()
+
+      if (!error && data) {
+        if (tempoInterval[tarefaId]) {
+          clearInterval(tempoInterval[tarefaId])
+        }
+
+        const intervalId = setInterval(() => {
+          setTempos(prev => {
+            const atual = prev[tarefaId]
+            if (atual?.status === 'executando') {
+              return {
+                ...prev,
+                [tarefaId]: {
+                  ...atual,
+                  tempoAtual: (atual.tempoAtual || 0) + 1
+                }
               }
             }
+            return prev
+          })
+        }, 1000)
+
+        setTempoInterval(prev => ({
+          ...prev,
+          [tarefaId]: intervalId
+        }))
+
+        setTempos(prev => ({
+          ...prev,
+          [tarefaId]: { 
+            ...data, 
+            tempoAtual: prev[tarefaId]?.tempoAtual || 0,
+            status: 'executando'
           }
-          return prev
-        })
-      }, 1000)
+        }))
+      }
+    } else {
+      const tempoAtual = tempos[tarefaId]
+      if (tempoAtual?.status === 'executando') return
 
-      setTempoInterval(prev => ({
-        ...prev,
-        [tarefaId]: intervalId
-      }))
+      const { data: temposExistentes } = await supabase
+        .from('apontamentos_tempo')
+        .select('*')
+        .eq('tarefa_id', tarefaId)
+        .eq('status', 'finalizado')
 
-      setTempos(prev => ({
-        ...prev,
-        [tarefaId]: { 
-          ...data, 
-          tempoAtual: 0,
+      const totalExistente = temposExistentes?.reduce((acc, t) => acc + (t.tempo_segundos || 0), 0) || 0
+
+      const { data, error } = await supabase
+        .from('apontamentos_tempo')
+        .insert([{
+          tarefa_id: tarefaId,
+          usuario_id: user.id,
+          data_inicio: new Date(),
           status: 'executando',
-          apontamentos: [data, ...(prev[tarefaId]?.apontamentos || [])]
+          tempo_segundos: totalExistente
+        }])
+        .select()
+        .single()
+
+      if (!error && data) {
+        if (tempoInterval[tarefaId]) {
+          clearInterval(tempoInterval[tarefaId])
         }
-      }))
+
+        const intervalId = setInterval(() => {
+          setTempos(prev => {
+            const atual = prev[tarefaId]
+            if (atual?.status === 'executando') {
+              return {
+                ...prev,
+                [tarefaId]: {
+                  ...atual,
+                  tempoAtual: (atual.tempoAtual || 0) + 1
+                }
+              }
+            }
+            return prev
+          })
+        }, 1000)
+
+        setTempoInterval(prev => ({
+          ...prev,
+          [tarefaId]: intervalId
+        }))
+
+        setTempos(prev => ({
+          ...prev,
+          [tarefaId]: { 
+            ...data, 
+            tempoAtual: totalExistente,
+            status: 'executando',
+            apontamentos: [data, ...(prev[tarefaId]?.apontamentos || [])]
+          }
+        }))
+      }
     }
   }
 
@@ -280,13 +249,11 @@ async function iniciarTempo(tarefaId) {
     const tempoAtual = tempos[tarefaId]
     if (!tempoAtual || tempoAtual.status !== 'executando' || !tempoAtual.id) return
 
-    // Parar o intervalo
     if (tempoInterval[tarefaId]) {
       clearInterval(tempoInterval[tarefaId])
     }
 
-    // Atualizar no banco
-    const { error } = await supabase
+    await supabase
       .from('apontamentos_tempo')
       .update({
         data_fim: new Date(),
@@ -295,28 +262,24 @@ async function iniciarTempo(tarefaId) {
       })
       .eq('id', tempoAtual.id)
 
-    if (!error) {
-      setTempos(prev => ({
-        ...prev,
-        [tarefaId]: { 
-          ...prev[tarefaId],
-          status: 'pausado'
-        }
-      }))
-    }
+    setTempos(prev => ({
+      ...prev,
+      [tarefaId]: { 
+        ...prev[tarefaId],
+        status: 'pausado'
+      }
+    }))
   }
 
   async function finalizarTempo(tarefaId) {
     const tempoAtual = tempos[tarefaId]
     if (!tempoAtual || !tempoAtual.id) return
 
-    // Parar o intervalo se estiver executando
     if (tempoInterval[tarefaId]) {
       clearInterval(tempoInterval[tarefaId])
     }
 
-    // Atualizar no banco
-    const { error } = await supabase
+    await supabase
       .from('apontamentos_tempo')
       .update({
         data_fim: new Date(),
@@ -325,10 +288,7 @@ async function iniciarTempo(tarefaId) {
       })
       .eq('id', tempoAtual.id)
 
-    if (!error) {
-      // Recarregar todos os tempos para ter o total correto
-      await carregarTempoTarefa(tarefaId)
-    }
+    await carregarTempoTarefa(tarefaId)
   }
 
   function formatarTempo(segundos) {
@@ -344,7 +304,6 @@ async function iniciarTempo(tarefaId) {
       .update({ [campo]: valor })
       .eq('id', tarefaId)
     
-    // Atualizar localmente
     setTarefas(prev => prev.map(t => 
       t.id === tarefaId ? { ...t, [campo]: valor } : t
     ))
@@ -419,12 +378,10 @@ async function iniciarTempo(tarefaId) {
         marginBottom: '16px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
       }}>
-        {/* Título da tarefa */}
         <strong style={{ color: '#fff', fontSize: '16px', display: 'block', marginBottom: '8px' }}>
           {tarefa.titulo}
         </strong>
 
-        {/* Informações do Projeto */}
         <div style={{
           background: 'rgba(0,0,0,0.2)',
           borderRadius: '4px',
@@ -444,7 +401,6 @@ async function iniciarTempo(tarefaId) {
           )}
         </div>
 
-        {/* Status e Prioridade */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
           <select
             value={tarefa.prioridade || 'Normal'}
@@ -487,7 +443,6 @@ async function iniciarTempo(tarefaId) {
           </select>
         </div>
 
-        {/* Múltiplos Responsáveis */}
         <div style={{ marginBottom: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <span style={{ color: '#3d5a80', fontSize: '12px' }}>Responsáveis:</span>
@@ -507,7 +462,6 @@ async function iniciarTempo(tarefaId) {
             </button>
           </div>
 
-          {/* Lista de responsáveis atuais */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
             {responsaveis.map(resp => (
               <span
@@ -540,7 +494,6 @@ async function iniciarTempo(tarefaId) {
             ))}
           </div>
 
-          {/* Seletor de responsável */}
           {mostrarSeletor && (
             <select
               onChange={(e) => {
@@ -570,7 +523,6 @@ async function iniciarTempo(tarefaId) {
           )}
         </div>
 
-        {/* Timer */}
         <div style={{
           background: 'rgba(0,0,0,0.3)',
           borderRadius: '4px',
@@ -648,7 +600,6 @@ async function iniciarTempo(tarefaId) {
             )}
           </div>
 
-          {/* Histórico de apontamentos */}
           {tempo.apontamentos && tempo.apontamentos.length > 1 && (
             <div style={{ marginTop: '8px', fontSize: '10px', color: '#3d5a80' }}>
               {tempo.apontamentos.filter(a => a.status === 'finalizado').length} sessões registradas
@@ -656,7 +607,6 @@ async function iniciarTempo(tarefaId) {
           )}
         </div>
 
-        {/* Prazo */}
         {tarefa.prazo && (
           <div style={{ color: '#94a3b8', fontSize: '12px', textAlign: 'right' }}>
             📅 Prazo: {new Date(tarefa.prazo).toLocaleDateString('pt-BR')}
@@ -680,7 +630,6 @@ async function iniciarTempo(tarefaId) {
         fontFamily: "'Barlow Condensed', sans-serif",
         padding: '24px'
       }}>
-        {/* Cabeçalho */}
         <button
           onClick={() => router.push('/projetos')}
           style={{
@@ -706,14 +655,12 @@ async function iniciarTempo(tarefaId) {
           </div>
         </div>
 
-        {/* Grid de tarefas */}
         <div style={{ 
           display: 'grid', 
           gridTemplateColumns: 'repeat(3, 1fr)', 
           gap: '20px',
           alignItems: 'start'
         }}>
-          {/* Coluna Geral */}
           <div>
             <h2 style={{ 
               color: '#f59e0b', 
@@ -738,7 +685,6 @@ async function iniciarTempo(tarefaId) {
             ))}
           </div>
 
-          {/* Coluna Elétrica */}
           <div>
             <h2 style={{ 
               color: '#3b82f6', 
@@ -763,7 +709,6 @@ async function iniciarTempo(tarefaId) {
             ))}
           </div>
 
-          {/* Coluna Mecânica */}
           <div>
             <h2 style={{ 
               color: '#10b981', 
