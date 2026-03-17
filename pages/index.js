@@ -246,6 +246,9 @@ export default function Board() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Nova Tarefa
           </button>
+          <button className="btn btn-secondary" onClick={() => router.push('/relatorio')} style={{fontSize:'12px', padding:'8px 12px'}}>
+          📊 Relatório
+          </button>
 
           {/* Botão Projetos */}
           <button className="btn btn-secondary" onClick={() => router.push('/projetos')} style={{fontSize:'12px', padding:'8px 12px'}}>
