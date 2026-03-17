@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import Head from 'next/head'
@@ -43,20 +43,17 @@ export default function Board() {
   const [equipe, setEquipe]     = useState([])
   const [busca, setBusca]       = useState('')
   const [filtroStatus, setFiltroStatus] = useState('')
-  const [modal, setModal]       = useState(null)  // null | task object
+  const [modal, setModal]       = useState(null)
   const [settings, setSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState('equipe')
   const [syncing, setSyncing]   = useState(false)
   const [lastSync, setLastSync] = useState('')
   const [toast, setToast]       = useState(null)
-  // Novos membros
   const [novoNome, setNovoNome]   = useState('')
   const [novoEmail, setNovoEmail] = useState('')
   const [novoSenha, setNovoSenha] = useState('')
-  // Upload foto
   const [uploadando, setUploadando] = useState(false)
 
-  // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) router.replace('/login')
@@ -65,16 +62,14 @@ export default function Board() {
     const { data: sub } = supabase.auth.onAuthStateChange((_, session) => {
       if (!session) router.replace('/login')
     })
-    return () => sub.subscription.unsubscribe()
+    return () => sub?.subscription?.unsubscribe()
   }, [])
 
-  // ── Auto-refresh 30s ─────────────────────────────────────────
   useEffect(() => {
     const t = setInterval(() => loadTasks(), 30000)
     return () => clearInterval(t)
   }, [])
 
-  // ── Carregar dados ───────────────────────────────────────────
   async function loadAll() {
     await Promise.all([loadTasks(), loadEquipe()])
   }
@@ -95,13 +90,11 @@ export default function Board() {
     setEquipe(data || [])
   }
 
-  // ── Toast ────────────────────────────────────────────────────
   function showToast(msg, cor = '#f59e0b') {
     setToast({ msg, cor })
     setTimeout(() => setToast(null), 3500)
   }
 
-  // ── Salvar tarefa ────────────────────────────────────────────
   async function salvarTarefa(task) {
     setSyncing(true)
     let error
@@ -139,14 +132,13 @@ export default function Board() {
     loadTasks()
   }
 
-  // ── Upload foto ──────────────────────────────────────────────
   async function uploadFoto(file) {
     if (!file) return
     if (file.size > 5 * 1024 * 1024) { showToast('Máximo 5MB!', '#ef4444'); return }
     setUploadando(true)
     const ext  = file.name.split('.').pop()
     const path = `tarefas/${Date.now()}.${ext}`
-    const { data, error } = await supabase.storage.from('fotos-tarefas').upload(path, file, { upsert: true })
+    const { error } = await supabase.storage.from('fotos-tarefas').upload(path, file, { upsert: true })
     if (error) { showToast('Erro no upload: ' + error.message, '#ef4444'); setUploadando(false); return }
     const { data: urlData } = supabase.storage.from('fotos-tarefas').getPublicUrl(path)
     setModal(prev => ({ ...prev, image_url: urlData.publicUrl }))
@@ -154,15 +146,10 @@ export default function Board() {
     setUploadando(false)
   }
 
-  // ── Convidar membro ──────────────────────────────────────────
   async function convidarMembro(e) {
     e.preventDefault()
     if (!novoNome || !novoEmail || !novoSenha) { showToast('Preencha todos os campos!', '#ef4444'); return }
-    // Cria auth user
-    const { error: authErr } = await supabase.auth.admin?.createUser({
-      email: novoEmail, password: novoSenha, email_confirm: true
-    }).catch(() => ({ error: null })) || {}
-    // Salva na equipe
+    
     const { error } = await supabase.from('equipe').insert({ nome: novoNome, email: novoEmail, ativo: true })
     if (error) showToast('Erro: ' + error.message, '#ef4444')
     else {
@@ -176,13 +163,13 @@ export default function Board() {
     await supabase.from('equipe').update({ ativo: !membro.ativo }).eq('id', membro.id)
     loadEquipe()
   }
+  
   async function removerMembro(id) {
     if (!confirm('Remover membro?')) return
     await supabase.from('equipe').delete().eq('id', id)
     loadEquipe()
   }
 
-  // ── Filtro ───────────────────────────────────────────────────
   const tasksFiltered = tasks.filter(t =>
     (!busca || (t.titulo||'').toLowerCase().includes(busca.toLowerCase()) ||
                (t.numero_pedido||'').toLowerCase().includes(busca.toLowerCase()) ||
@@ -235,12 +222,7 @@ export default function Board() {
             </div>
           )}
         </div>
-          <button className="btn btn-icon" onClick={() => { setSettings(true); setSettingsTab('equipe') }} title="Configurações">
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">...</svg>
-</button>
-<button className="btn btn-secondary" onClick={() => supabase.auth.signOut()} style={{fontSize:'12px', padding:'8px 12px'}}>
-  Sair
-</button>
+
         <div style={{display:'flex', gap:7, alignItems:'center', flexWrap:'wrap'}}>
           {/* Busca */}
           <div style={{position:'relative', display:'flex', alignItems:'center'}}>
@@ -248,22 +230,34 @@ export default function Board() {
             <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar tarefa, PO, responsável..."
               style={{borderRadius:'8px', padding:'8px 11px 8px 30px', fontSize:'13px', width:220}}/>
           </div>
+          
           <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)}
             style={{borderRadius:'8px', padding:'8px 11px', fontSize:'13px'}}>
             <option value="">Todos</option>
             <option>Pendente</option><option>Em andamento</option>
             <option>Aguardando</option><option>Concluida</option>
           </select>
+          
           <button className="btn btn-secondary" onClick={loadTasks}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
+          
           <button className="btn btn-primary" onClick={() => setModal({...EMPTY_TASK})}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Nova Tarefa
           </button>
+
+          {/* Botão Projetos */}
+          <button className="btn btn-secondary" onClick={() => router.push('/projetos')} style={{fontSize:'12px', padding:'8px 12px'}}>
+            📋 Projetos
+          </button>
+
+          {/* Configurações */}
           <button className="btn btn-icon" onClick={() => { setSettings(true); setSettingsTab('equipe') }} title="Configurações">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
+
+          {/* Sair */}
           <button className="btn btn-secondary" onClick={() => supabase.auth.signOut()} style={{fontSize:'12px', padding:'8px 12px'}}>
             Sair
           </button>
@@ -388,7 +382,6 @@ function Card({ task: t, col, onOpen, onDelete }) {
         boxShadow: hover ? `0 6px 20px ${col.cor}33` : 'none',
       }}>
 
-      {/* FOTO NO TOPO — igual Bitrix */}
       {t.image_url && (
         <div style={{width:'100%', height:115, overflow:'hidden', background:'#0d1b2a'}}>
           <img src={t.image_url} alt="" style={{width:'100%', height:'100%', objectFit:'cover', display:'block'}}
@@ -436,9 +429,6 @@ function TaskModal({ task, equipe, uploadando, onUpload, onSave, onClose, onChan
   const f = (k) => (v) => onChange(prev => ({ ...prev, [k]: v }))
   const ativos = equipe.filter(m => m.ativo)
 
-  const selPart = (task.participantes||'').split(',').map(s=>s.trim()).filter(Boolean)
-  const selObs  = (task.observadores||'').split(',').map(s=>s.trim()).filter(Boolean)
-
   function togglePessoa(key, nome) {
     const sel = (task[key]||'').split(',').map(s=>s.trim()).filter(Boolean)
     const idx = sel.indexOf(nome)
@@ -451,7 +441,7 @@ function TaskModal({ task, equipe, uploadando, onUpload, onSave, onClose, onChan
     onSave(task)
   }
 
-  const S = { // styles
+  const S = {
     overlay: {position:'fixed',inset:0,background:'rgba(0,0,0,.82)',backdropFilter:'blur(5px)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:14},
     panel: {background:'#0c1a2e',border:'1px solid rgba(255,255,255,.1)',borderRadius:14,width:'100%',maxWidth:680,maxHeight:'93vh',overflowY:'auto',padding:24,boxShadow:'0 24px 64px rgba(0,0,0,.7)',fontFamily:"'Barlow Condensed',sans-serif"},
     label: {display:'block',fontSize:'10px',color:'#3d5a80',marginBottom:4,textTransform:'uppercase',letterSpacing:'1px',fontFamily:'monospace'},
@@ -472,13 +462,11 @@ function TaskModal({ task, equipe, uploadando, onUpload, onSave, onClose, onChan
           </button>
         </div>
 
-        {/* Título */}
         <div style={S.field}>
           <label style={S.label}>Título da tarefa *</label>
           <input style={S.input} value={task.titulo||''} onChange={e=>f('titulo')(e.target.value)} placeholder="Ex: KNORR - NR12 em máquinas..."/>
         </div>
 
-        {/* Descrição */}
         <div style={S.field}>
           <label style={S.label}>Descrição / Escopo</label>
           <textarea style={{...S.input,resize:'vertical',minHeight:68}} value={task.descricao||''} onChange={e=>f('descricao')(e.target.value)}/>
@@ -520,7 +508,6 @@ function TaskModal({ task, equipe, uploadando, onUpload, onSave, onClose, onChan
           <input style={S.input} value={task.proprietario||''} onChange={e=>f('proprietario')(e.target.value)} placeholder="JUNIOR CARANDINA"/>
         </div>
 
-        {/* Responsável */}
         <div style={S.field}>
           <label style={S.label}>Responsável</label>
           <select style={S.input} value={task.responsavel||''} onChange={e=>f('responsavel')(e.target.value)}>
@@ -529,7 +516,6 @@ function TaskModal({ task, equipe, uploadando, onUpload, onSave, onClose, onChan
           </select>
         </div>
 
-        {/* Participantes — checkboxes */}
         {['participantes','observadores'].map(key => {
           const sel = (task[key]||'').split(',').map(s=>s.trim()).filter(Boolean)
           return (
@@ -545,21 +531,10 @@ function TaskModal({ task, equipe, uploadando, onUpload, onSave, onClose, onChan
                   </label>
                 ))}
               </div>
-              {sel.length > 0 && (
-                <div style={{display:'flex',flexWrap:'wrap',gap:5,marginTop:6}}>
-                  {sel.map(v=>(
-                    <span key={v} style={{background:'rgba(255,255,255,.07)',color:'#cbd5e1',fontSize:11,padding:'3px 9px',borderRadius:20,display:'flex',alignItems:'center',gap:5}}>
-                      {v}
-                      <button onClick={()=>togglePessoa(key,v)} style={{background:'none',border:'none',cursor:'pointer',color:'#3d5a80',fontSize:14,padding:0,lineHeight:1}}>×</button>
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           )
         })}
 
-        {/* FOTO */}
         <div style={S.field}>
           <label style={S.label}>Foto da atividade</label>
           <div style={{border:'2px dashed rgba(255,255,255,.12)',borderRadius:9,padding:16,textAlign:'center',cursor:'pointer',transition:'all .2s',position:'relative',minHeight:80,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4}}
@@ -583,7 +558,6 @@ function TaskModal({ task, equipe, uploadando, onUpload, onSave, onClose, onChan
           <input style={{...S.input,marginTop:4,fontSize:12}} value={task.image_url||''} onChange={e=>f('image_url')(e.target.value)} placeholder="https://..."/>
         </div>
 
-        {/* Observações */}
         <div style={S.field}>
           <label style={S.label}>Observações</label>
           <textarea style={{...S.input,resize:'vertical',minHeight:68}} value={task.observacoes||''} onChange={e=>f('observacoes')(e.target.value)}/>
@@ -617,7 +591,6 @@ function SettingsModal({ equipe, tab, setTab, novoNome, setNovoNome, novoEmail, 
           </button>
         </div>
 
-        {/* Tabs */}
         <div style={{display:'flex',gap:4,marginBottom:20,background:'rgba(255,255,255,.04)',padding:4,borderRadius:9}}>
           {[['equipe','👥 Equipe'],['acesso','🔐 Acesso'],['sobre','ℹ Sobre']].map(([id,lbl])=>(
             <button key={id} onClick={()=>setTab(id)} style={{
@@ -629,7 +602,6 @@ function SettingsModal({ equipe, tab, setTab, novoNome, setNovoNome, novoEmail, 
           ))}
         </div>
 
-        {/* Equipe */}
         {tab === 'equipe' && (
           <div>
             <p style={{color:'#94a3b8',fontSize:'12px',marginBottom:14}}>Membros <span style={{color:'#22c55e'}}>Ativos</span> aparecem para seleção nas tarefas.</p>
@@ -651,47 +623,37 @@ function SettingsModal({ equipe, tab, setTab, novoNome, setNovoNome, novoEmail, 
           </div>
         )}
 
-        {/* Acesso */}
         {tab === 'acesso' && (
           <div>
-            <p style={{color:'#94a3b8',fontSize:'12px',marginBottom:16}}>Convide pessoas para acessar o sistema. Elas receberão um link de acesso por e-mail.</p>
+            <p style={{color:'#94a3b8',fontSize:'12px',marginBottom:16}}>Convide pessoas para acessar o sistema.</p>
             <form onSubmit={onConvidar}>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
                 <div>
-                  <label style={{display:'block',fontSize:'10px',color:'#3d5a80',marginBottom:4,fontFamily:'monospace',textTransform:'uppercase',letterSpacing:'1px'}}>Nome</label>
-                  <input value={novoNome} onChange={e=>setNovoNome(e.target.value)} placeholder="Nome completo" required style={{...S.input,width:'100%'}}/>
+                  <label style={{display:'block',fontSize:'10px',color:'#3d5a80',marginBottom:4}}>Nome</label>
+                  <input value={novoNome} onChange={e=>setNovoNome(e.target.value)} required style={{...S.input,width:'100%'}}/>
                 </div>
                 <div>
-                  <label style={{display:'block',fontSize:'10px',color:'#3d5a80',marginBottom:4,fontFamily:'monospace',textTransform:'uppercase',letterSpacing:'1px'}}>E-mail</label>
-                  <input type="email" value={novoEmail} onChange={e=>setNovoEmail(e.target.value)} placeholder="email@empresa.com" required style={{...S.input,width:'100%'}}/>
+                  <label style={{display:'block',fontSize:'10px',color:'#3d5a80',marginBottom:4}}>E-mail</label>
+                  <input type="email" value={novoEmail} onChange={e=>setNovoEmail(e.target.value)} required style={{...S.input,width:'100%'}}/>
                 </div>
               </div>
               <div style={{marginBottom:12}}>
-                <label style={{display:'block',fontSize:'10px',color:'#3d5a80',marginBottom:4,fontFamily:'monospace',textTransform:'uppercase',letterSpacing:'1px'}}>Senha de acesso</label>
-                <input type="password" value={novoSenha} onChange={e=>setNovoSenha(e.target.value)} placeholder="Mínimo 6 caracteres" required minLength={6} style={{...S.input,width:'100%'}}/>
+                <label style={{display:'block',fontSize:'10px',color:'#3d5a80',marginBottom:4}}>Senha</label>
+                <input type="password" value={novoSenha} onChange={e=>setNovoSenha(e.target.value)} required minLength={6} style={{...S.input,width:'100%'}}/>
               </div>
-              <button type="submit" className="btn btn-primary" style={{width:'100%',padding:12,fontSize:14}}>
-                ✉ Criar acesso e adicionar à equipe
+              <button type="submit" className="btn btn-primary" style={{width:'100%',padding:12}}>
+                ✉ Adicionar membro
               </button>
             </form>
-            <div style={{marginTop:16,padding:12,background:'rgba(245,158,11,.07)',borderRadius:8,fontSize:'12px',color:'#92400e',border:'1px solid rgba(245,158,11,.2)'}}>
-              💡 Após criar, compartilhe o link <strong style={{color:'#f59e0b'}}>{typeof window!=='undefined'?window.location.origin:''}/login</strong> e a senha com o membro.
-            </div>
           </div>
         )}
 
-        {/* Sobre */}
         {tab === 'sobre' && (
           <div style={{textAlign:'center',padding:'20px 0'}}>
-            <div style={{fontSize:26,fontWeight:800,color:'#f59e0b',letterSpacing:2}}>NEW TECH</div>
-            <div style={{fontSize:11,color:'#3d5a80',letterSpacing:3,marginBottom:16}}>AUTOMAÇÃO · PROJETOS</div>
-            <p style={{color:'#64748b',fontSize:12,lineHeight:1.9}}>
-              Sistema de gestão de projetos Kanban<br/>
-              Banco de dados: Supabase (PostgreSQL)<br/>
-              Hospedagem: Vercel (grátis)<br/>
-              Fotos: Supabase Storage<br/>
-              Login com convite por e-mail<br/><br/>
-              <span style={{color:'#1e3a5f'}}>Desenvolvido com ❤ por Claude (Anthropic)</span>
+            <div style={{fontSize:26,fontWeight:800,color:'#f59e0b'}}>NEW TECH</div>
+            <p style={{color:'#64748b',fontSize:12}}>
+              Sistema de gestão de projetos<br/>
+              Versão 2.0
             </p>
           </div>
         )}
