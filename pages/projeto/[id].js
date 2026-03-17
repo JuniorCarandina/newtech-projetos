@@ -1,5 +1,5 @@
 import { useRouter } from 'next/router'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import Head from 'next/head'
 
@@ -13,6 +13,7 @@ export default function ProjetoDetalhe() {
   const [user, setUser] = useState(null)
   const [tempos, setTempos] = useState({})
   const [tempoInterval, setTempoInterval] = useState({})
+  const [emails, setEmails] = useState({})
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -27,6 +28,18 @@ export default function ProjetoDetalhe() {
       carregarDados()
     }
   }, [id])
+
+  async function carregarEmailsUsuarios() {
+    const { data: usuarios } = await supabase
+      .from('equipe')
+      .select('id, nome, email')
+    
+    const mapaEmails = {}
+    usuarios?.forEach(u => {
+      mapaEmails[u.id] = u.nome || u.email
+    })
+    setEmails(mapaEmails)
+  }
 
   async function carregarDados() {
     setLoading(true)
@@ -68,6 +81,7 @@ export default function ProjetoDetalhe() {
       .eq('ativo', true)
     
     setEquipe(equipeData || [])
+    await carregarEmailsUsuarios()
 
     for (const tarefa of tarefasOrdenadas) {
       await carregarTempoTarefa(tarefa.id)
@@ -130,6 +144,13 @@ export default function ProjetoDetalhe() {
   async function iniciarTempo(tarefaId) {
     if (!user) return
 
+    // Parar qualquer outro tempo em execução do mesmo usuário
+    for (const [id, tempo] of Object.entries(tempos)) {
+      if (tempo.status === 'executando' && id !== tarefaId) {
+        await pausarTempo(id)
+      }
+    }
+
     const { data: tempoPausado } = await supabase
       .from('apontamentos_tempo')
       .select('*')
@@ -178,7 +199,8 @@ export default function ProjetoDetalhe() {
           [tarefaId]: { 
             ...data, 
             tempoAtual: prev[tarefaId]?.tempoAtual || 0,
-            status: 'executando'
+            status: 'executando',
+            apontamentos: [data, ...(prev[tarefaId]?.apontamentos || [])]
           }
         }))
       }
@@ -251,9 +273,14 @@ export default function ProjetoDetalhe() {
 
     if (tempoInterval[tarefaId]) {
       clearInterval(tempoInterval[tarefaId])
+      setTempoInterval(prev => {
+        const novo = { ...prev }
+        delete novo[tarefaId]
+        return novo
+      })
     }
 
-    await supabase
+    const { error } = await supabase
       .from('apontamentos_tempo')
       .update({
         data_fim: new Date(),
@@ -262,13 +289,15 @@ export default function ProjetoDetalhe() {
       })
       .eq('id', tempoAtual.id)
 
-    setTempos(prev => ({
-      ...prev,
-      [tarefaId]: { 
-        ...prev[tarefaId],
-        status: 'pausado'
-      }
-    }))
+    if (!error) {
+      setTempos(prev => ({
+        ...prev,
+        [tarefaId]: { 
+          ...prev[tarefaId],
+          status: 'pausado'
+        }
+      }))
+    }
   }
 
   async function finalizarTempo(tarefaId) {
@@ -277,17 +306,23 @@ export default function ProjetoDetalhe() {
 
     if (tempoInterval[tarefaId]) {
       clearInterval(tempoInterval[tarefaId])
+      setTempoInterval(prev => {
+        const novo = { ...prev }
+        delete novo[tarefaId]
+        return novo
+      })
     }
 
     await supabase
       .from('apontamentos_tempo')
       .update({
         data_fim: new Date(),
-        tempo_segundos: tempoAtual.tempoAtual || 0,
+        tempo_segundos: tempoAtual.tempoAtual,
         status: 'finalizado'
       })
       .eq('id', tempoAtual.id)
 
+    // Recarregar apenas esta tarefa, não todas
     await carregarTempoTarefa(tarefaId)
   }
 
@@ -299,14 +334,16 @@ export default function ProjetoDetalhe() {
   }
 
   async function atualizarTarefa(tarefaId, campo, valor) {
+    // Atualizar local primeiro para não dar refresh na tela
+    setTarefas(prev => prev.map(t => 
+      t.id === tarefaId ? { ...t, [campo]: valor } : t
+    ))
+
+    // Depois salvar no banco
     await supabase
       .from('tarefas')
       .update({ [campo]: valor })
       .eq('id', tarefaId)
-    
-    setTarefas(prev => prev.map(t => 
-      t.id === tarefaId ? { ...t, [campo]: valor } : t
-    ))
   }
 
   async function adicionarResponsavel(tarefaId, responsavel) {
@@ -367,6 +404,8 @@ export default function ProjetoDetalhe() {
     const tempo = tempos[tarefa.id] || { tempoAtual: 0, status: 'parado', apontamentos: [] }
     const responsaveis = tarefa.responsaveis ? tarefa.responsaveis.split(',').filter(r => r.trim()) : []
     const [mostrarSeletor, setMostrarSeletor] = useState(false)
+
+    const sessoesFinalizadas = tempo.apontamentos?.filter(a => a.status === 'finalizado').length || 0
 
     return (
       <div style={{
@@ -600,9 +639,9 @@ export default function ProjetoDetalhe() {
             )}
           </div>
 
-          {tempo.apontamentos && tempo.apontamentos.length > 1 && (
+          {sessoesFinalizadas > 0 && (
             <div style={{ marginTop: '8px', fontSize: '10px', color: '#3d5a80' }}>
-              {tempo.apontamentos.filter(a => a.status === 'finalizado').length} sessões registradas
+              {sessoesFinalizadas} sessões registradas
             </div>
           )}
         </div>
