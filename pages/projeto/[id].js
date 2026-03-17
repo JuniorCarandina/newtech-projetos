@@ -31,7 +31,7 @@ export default function ProjetoDetalhe() {
       .from('tarefas')
       .select('*')
       .eq('projeto_id', id)
-      .order('etapa_padrao_id')
+      .order('etapa_padrao_id', { ascending: true })
     
     setTarefas(tarefasData || [])
     setLoading(false)
